@@ -20,6 +20,8 @@ class Block:
             return f'{self.kind}({self.level}): {self.data}'
         elif self.kind == CODE:
             return f'{self.kind}({self.language}): {self.data}'
+        elif self.kind == LIST_ITEM:
+            return f'{self.kind}({self.level}{" N" if self.ordered_list else ""}): {self.data}'
         else:
             return f'{self.kind}: {self.data}'
 
@@ -38,8 +40,27 @@ def parse_heading(line: str):
         n += 1
     return Block(HEADING, line[n:].strip(), n)
 
+def indent_level(s: str):
+    leading_spaces = len(s) - len(s.lstrip(' '))
+    return leading_spaces // 2
+
 def parse_list_item(lines: list[str], start: int):
-    pass
+    item_lines = [lines[start].replace('+ ', '', 1)]
+    first_indent = indent_level(lines[start])
+
+    for line in lines[start + 1:]:
+        if line.strip().startswith('+ '):
+            break
+        elif line.startswith('  '):
+            level = indent_level(line)
+            if level - 1 == first_indent:
+                item_lines.append(line)
+            else:
+                break
+        else:
+            break
+
+    return (item_lines, first_indent)
 
 def makeblock(lines):
     blocks = []
@@ -57,8 +78,11 @@ def makeblock(lines):
             blocks.append(Block(CODE, ''.join(code_lines), language=language))
             i = i + len(code_lines) + 2
             continue
-        elif line.strip().startswith('+'):
-            pass
+        elif line.strip().startswith('+ '):
+            item_lines, level = parse_list_item(lines, i)
+            blocks.append(Block(LIST_ITEM, ''.join(item_lines), level=level, ordered_list=True))
+            i = i + len(item_lines)
+            continue
         else:
             blocks.append(Block(PARAGRAPH, line))
 
@@ -69,6 +93,7 @@ def makeblock(lines):
 with open('example.txt', 'r') as f:
     data = f.readlines()
 
+data = [l.replace('\t', '    ') for l in data]
 blocks = makeblock(data)
 for block in blocks:
     print(block)
