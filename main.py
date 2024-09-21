@@ -41,26 +41,34 @@ def parse_heading(line: str):
     return Block(HEADING, line[n:].strip(), n)
 
 def indent_level(s: str):
+    s = s.replace('\t', '    ')
     leading_spaces = len(s) - len(s.lstrip(' '))
     return leading_spaces // 2
 
+def start_of_list_item(s: str) -> str | None:
+    if s.strip().startswith('+ '): return '+'
+    if s.strip().startswith('- '): return '-'
+    return None
+
 def parse_list_item(lines: list[str], start: int):
-    item_lines = [lines[start].replace('+ ', '', 1)]
+    prefix = start_of_list_item(lines[start])
+    assert prefix
+    item_lines = [lines[start].replace(f'{prefix} ', '', 1)]
     first_indent = indent_level(lines[start])
 
     for line in lines[start + 1:]:
-        if line.strip().startswith('+ '):
+        if start_of_list_item(line):
             break
         elif line.startswith('  '):
             level = indent_level(line)
             if level - 1 == first_indent:
-                item_lines.append(line)
+                item_lines.append(line.lstrip())
             else:
                 break
         else:
             break
 
-    return (item_lines, first_indent)
+    return (item_lines, first_indent, prefix == '+')
 
 def makeblock(lines):
     blocks = []
@@ -78,9 +86,9 @@ def makeblock(lines):
             blocks.append(Block(CODE, ''.join(code_lines), language=language))
             i = i + len(code_lines) + 2
             continue
-        elif line.strip().startswith('+ '):
-            item_lines, level = parse_list_item(lines, i)
-            blocks.append(Block(LIST_ITEM, ''.join(item_lines), level=level, ordered_list=True))
+        elif start_of_list_item(line):
+            item_lines, level, ordered = parse_list_item(lines, i)
+            blocks.append(Block(LIST_ITEM, ''.join(item_lines), level=level, ordered_list=ordered))
             i = i + len(item_lines)
             continue
         else:
@@ -93,7 +101,6 @@ def makeblock(lines):
 with open('example.txt', 'r') as f:
     data = f.readlines()
 
-data = [l.replace('\t', '    ') for l in data]
 blocks = makeblock(data)
 for block in blocks:
     print(block)

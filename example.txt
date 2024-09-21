@@ -3,7 +3,7 @@
     voluptate velit esse cillum dolore eu
     deserunt mollit anim id est laborum.
   + Pog
-    + In the
-      + Chat
-      + yipeee ^-^
+	+ In the
+	- Chat
+	- yipeee ^-^
 + Lorem ipsum int occaecat cupidatat
