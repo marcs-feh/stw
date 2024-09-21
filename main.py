@@ -1,16 +1,17 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-PARAGRAPH = 'paragraph'
-HEADING = 'heading'
-CODE = 'code'
+PARAGRAPH  = 'paragraph'
+HEADING    = 'heading'
+CODE       = 'code'
 LINE_BREAK = 'line_break'
-LIST_ITEM = 'list_item'
+LIST_ITEM  = 'list_item'
 # CITATION = 'citation'
 
 @dataclass
 class Block:
     kind : str = PARAGRAPH
     data : str = ''
+    styled_data : list = field(default_factory=list)
     level : int = 0
     language : str | None = None
     ordered_list : bool = False
@@ -38,7 +39,7 @@ def parse_heading(line: str):
     for c in line:
         if c != '=': break
         n += 1
-    return Block(HEADING, line[n:].strip(), n)
+    return Block(HEADING, line[n:].strip(), level=n)
 
 def indent_level(s: str):
     s = s.replace('\t', '    ')
@@ -61,7 +62,6 @@ def parse_list_item(lines: list[str], start: int):
             break
         elif line.strip('\t').startswith('  '):
             level = indent_level(line)
-            print(f'Line:"{line}", I:{level}')
             if (level - 1) == first_indent:
                 item_lines.append(line.lstrip())
             else:
@@ -71,7 +71,16 @@ def parse_list_item(lines: list[str], start: int):
 
     return (item_lines, first_indent, prefix == '+')
 
-def makeblock(lines):
+def merge_paragraphs(blocks: list[Block]):
+    merged = [Block(LINE_BREAK)]
+    for b in blocks:
+        if b.kind == PARAGRAPH and merged[-1].kind == PARAGRAPH:
+            merged[-1].data += '\n' + b.data
+        else:
+            merged.append(b)
+    return merged
+
+def parse_blocks(lines) -> list[Block]:
     blocks = []
     i = 0
 
@@ -97,11 +106,95 @@ def makeblock(lines):
 
         i += 1
 
-    return blocks
+    return merge_paragraphs(blocks)
+
+ITALIC      = 'italic'
+BOLD        = 'bold'
+STRIKETHRU  = 'strikethrough'
+UNDERLINE   = 'underline'
+INLINE_CODE = 'code'
+
+@dataclass
+class TextEffect:
+    kind: str
+
+def is_surrounded_by_whitespace(s: str, c: int) -> bool:
+    surroundings = s[c - 1:c + 2]
+    return len(surroundings.strip()) == 1
+
+# TODO: Handle escaping the effects with '\'
+def parse_inline_effects(b: Block) -> list:
+    content = []
+    previous = 0
+    effects = {
+        '*': TextEffect(BOLD),
+        '/': TextEffect(ITALIC),
+        '~': TextEffect(STRIKETHRU),
+        '_': TextEffect(UNDERLINE),
+    }
+
+    i, c = 0, 0
+    in_code = False
+    for i, c in enumerate(b.data):
+        if c == '`':
+            content.append(b.data[previous:i])
+            previous = i + 1
+            in_code = not in_code
+        if in_code: continue
+
+        if not is_surrounded_by_whitespace(b.data, i):
+            if c in effects:
+                acc = b.data[previous:i]
+                previous = i + 1
+                content.append(acc)
+                content.append(effects[c])
+    content.append(b.data[previous:])
+    return content
+
+def render_inline_style(block_data: list) -> str:
+    html = ''
+    effect_state = {
+        ITALIC: False,
+        BOLD: False,
+        STRIKETHRU: False,
+        UNDERLINE: False,
+    }
+
+    TAG_MAP = {
+        ITALIC: 'i',
+        BOLD: 'b',
+        STRIKETHRU: 's',
+        UNDERLINE: 'u',
+    }
+
+    for data in block_data:
+        if type(data) is str:
+            html += data.replace('\n', ' ')
+        elif type(data) is TextEffect:
+            slash = '/' if effect_state[data.kind] else ''
+            effect_state[data.kind] = not effect_state[data.kind]
+            html += f'<{slash}{TAG_MAP[data.kind]}>'
+
+    return html
+
+def render_html(blocks: list[Block]) -> str:
+    html = ''
+
+    for block in blocks:
+        if block.kind == PARAGRAPH:
+            html += '<p>'
+            html += render_inline_style(block.styled_data)
+            html += '</p>\n'
+
+    return html
 
 with open('example.txt', 'r') as f:
     data = f.readlines()
 
-blocks = makeblock(data)
+blocks = parse_blocks(data)
 for block in blocks:
-    print(block)
+    if block.kind in (PARAGRAPH, LIST_ITEM):
+        block.styled_data = parse_inline_effects(block)
+    print(block.styled_data)
+
+print(render_html(blocks))
