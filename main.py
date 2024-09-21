@@ -59,9 +59,10 @@ def parse_list_item(lines: list[str], start: int):
     for line in lines[start + 1:]:
         if start_of_list_item(line):
             break
-        elif line.startswith('  '):
+        elif line.strip('\t').startswith('  '):
             level = indent_level(line)
-            if level - 1 == first_indent:
+            print(f'Line:"{line}", I:{level}')
+            if (level - 1) == first_indent:
                 item_lines.append(line.lstrip())
             else:
                 break
