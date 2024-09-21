@@ -4,6 +4,8 @@ import "core:mem"
 import "core:fmt"
 import "core:strings"
 
+starts_with :: strings.starts_with
+
 PROGRAM_MEMORY : [32 * 1024 * 1024]u8
 
 Paragraph_Line :: struct {
@@ -85,7 +87,7 @@ parse_code_block :: proc(parser: ^Line_Parser) -> Code {
 
 	for !lp_done(parser^) {
 		line := lp_advance(parser)
-		if strings.starts_with(line, "```"){
+		if starts_with(line, "```"){
 			break
 		}
 	}
@@ -116,8 +118,23 @@ merge_into_paragraph :: proc(blocks: []Block_Element) -> (Paragraph, int) {
 	return paragraph, len(lines)
 }
 
-identation_level :: proc(s: string) -> int {
-	return 100000
+indentation_level :: proc(s: string) -> int {
+	leading_spaces := 0
+	leading_tabs := 0
+	for r, i in s {
+		if r == '\t' {
+			leading_tabs += 1
+			continue
+		}
+		if r == ' ' {
+			leading_spaces += 1
+			continue
+		}
+		break
+	}
+
+	level := (leading_spaces + (leading_tabs * 4)) / 2
+	return level
 }
 
 parse_blocks :: proc(lines: []string) -> []Block_Element {
@@ -129,18 +146,22 @@ parse_blocks :: proc(lines: []string) -> []Block_Element {
 
 	for !lp_done(parser) {
 		line := lp_advance(&parser)
-		trimmed_line := strings.trim_right(line, " \t\n\t")
+		trimmed_line := strings.trim(line, " \t\n\t")
 
 		switch {
 		case len(trimmed_line) == 0:
 			append(&blocks, Line_Break{})
 
-		case strings.starts_with(line, "="):
+		case starts_with(line, "="):
 			append(&blocks, parse_heading(line))
 
-		case strings.starts_with(line, "```"):
+		case starts_with(line, "```"):
 			parser.current -= 1
 			append(&blocks, parse_code_block(&parser))
+
+		case starts_with(trimmed_line, "- ") || starts_with(trimmed_line, "+ "):
+			parser.current -= 1
+			append(&blocks, parse_list_item(&parser))
 
 		case:
 			append(&blocks, Paragraph_Line{
@@ -170,6 +191,53 @@ merge_paragraph_lines :: proc(blocks: []Block_Element) -> []Block_Element {
 	return merged_blocks[:]
 }
 
+is_start_of_list_item :: proc(s: string) -> (which: rune, ok: bool) {
+	if starts_with(strings.trim_left_space(s), "- "){ return '-', true }
+	if starts_with(strings.trim_left_space(s), "+ "){ return '+', true }
+	return 0, false
+}
+
+parse_list_item :: proc(parser: ^Line_Parser) -> List_Item {
+	parser.previous = parser.current
+	lines := make([dynamic]string)
+
+	first_line := lp_advance(parser)
+	first_indent := indentation_level(first_line)
+
+	append(&lines, strings.trim_space(first_line)[2:])
+
+	kind, ok := is_start_of_list_item(first_line)
+	assert(ok, "First line must be of list prefix")
+
+	for !lp_done(parser^){
+		line := lp_peek(parser^, 0)
+		if _, ok := is_start_of_list_item(line); ok{
+			break
+		}
+		else if starts_with(strings.trim_left(line, "\t"), "  "){
+			level := indentation_level(line)
+			if level - 1 == first_indent {
+				append(&lines, strings.trim_space(line))
+				parser.current += 1
+			}
+			else {
+				break
+			}
+		}
+		else {
+			break
+		}
+	}
+
+	shrink(&lines)
+	item := List_Item {
+		lines = lines[:],
+		level = first_indent,
+		ordered = kind == '+',
+	}
+	return item
+}
+
 main :: proc(){
 	source :: #load("example.txt", string)
 	init_arena: {
@@ -190,5 +258,4 @@ main :: proc(){
 	for b in blocks {
 		fmt.println(b)
 	}
-
 }

@@ -1,27 +1,11 @@
 
-= Heading 1
-== Heading 2
-=== Heading 3
-==== Heading 4
-===== Heading 5
-====== Heading 6
-
-Excepteur sint occaecat cupidatat
-Duis aute irure dolor in reprehenderit in
-
-voluptate ~velit~ esse cillum dolore eu
-deserunt *mol*/lit* an/im* id est laborum
-Lorem ipsum `~32*4` int occaecat cupidatat
-
-```c
-int main(){
-	printf("Hello world!");
-}
-```
-
-
-- *Bold* Item, like a /golden
-  experience/
-
-3 * 4 / 2
+- First item
+- Second item
+	- 2First item
+	  still the same
+	+ 2Sec
+	  + pog
+	  + foo
+	  + bar
+  + Hello
 
