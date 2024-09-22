@@ -134,6 +134,7 @@ indentation_level :: proc(s: string) -> int {
 	return level
 }
 
+
 parse_blocks :: proc(lines: []string) -> []Block_Element {
 	blocks := make([dynamic]Block_Element)
 
