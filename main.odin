@@ -3,8 +3,12 @@ package stw
 import "core:mem"
 import "core:fmt"
 import "core:strings"
+import "core:unicode"
+import "core:unicode/utf8"
 
 starts_with :: strings.starts_with
+
+is_white_space :: unicode.is_white_space
 
 PROGRAM_MEMORY : [32 * 1024 * 1024]u8
 
@@ -14,22 +18,26 @@ Paragraph_Line :: struct {
 
 Paragraph :: struct {
 	lines: []string,
+	styled_text: []Text_Chunk,
 }
 
 List_Item :: struct {
 	lines: []string,
 	level: int,
 	ordered: bool,
+	styled_text: []Text_Chunk,
 }
 
 Heading :: struct {
 	data: string,
 	level: int,
+	styled_text: []Text_Chunk,
 }
 
 Code :: struct {
 	lines: []string,
 	language: string,
+	styled_text: []Text_Chunk,
 }
 
 Line_Break :: struct {}
@@ -37,6 +45,19 @@ Line_Break :: struct {}
 Block_Element :: union {
 	Heading, Paragraph, List_Item, Code, Line_Break,
 	Paragraph_Line,
+}
+
+Style :: enum {
+	Bold,
+	Italic,
+	Underline,
+	Strikethrough,
+	Code,
+}
+
+Text_Chunk :: union {
+	Style,
+	string,
 }
 
 Line_Parser :: struct {
@@ -238,6 +259,106 @@ parse_list_item :: proc(parser: ^Line_Parser) -> List_Item {
 	return item
 }
 
+Style_Parser :: struct {
+	current: int,
+	previous: int,
+	source: string,
+}
+
+join_lines :: proc(blocks: []Block_Element) -> (err: mem.Allocator_Error) {
+	for &block, i in blocks {
+		switch &block in block {
+		case Paragraph:
+			joined := strings.join(block.lines, "\n") or_return
+			block.lines[0] = joined
+			block.lines = block.lines[:1]
+		case List_Item:
+			joined := strings.join(block.lines, "\n") or_return
+			block.lines[0] = joined
+			block.lines = block.lines[:1]
+		case Code:
+			joined := strings.join(block.lines, "\n") or_return
+			block.lines[0] = joined
+			block.lines = block.lines[:1]
+
+		case Paragraph_Line, Line_Break, Heading:
+		}
+	}
+	return
+}
+
+sp_done :: proc(parser: Style_Parser) -> bool {
+	return parser.current >= len(parser.source)
+}
+
+sp_advance :: proc(parser: ^Style_Parser) -> (rune, int) {
+	if sp_done(parser^){
+		return 0, 0
+	}
+	r, n := utf8.decode_rune(parser.source[parser.current:])
+	parser.current += n
+	return r, n
+}
+
+is_markup_rune :: proc(r: rune) -> bool {
+	switch r {
+	case '*', '/', '~', '_', '`':
+		return true
+	case:
+		return false
+	}
+}
+
+// A markup rune (R) is interpreted as markup if it is in the following form
+// W := word rune, non-whitespace
+// M := another markup rune distinct from R
+// S := whitespace
+// Suitable(R) := ((S|M)R(W|M)) | ((W|M)R(S|M))
+is_markup_rune_suitable :: proc(prev, cur, next: rune) -> bool {
+	assert(is_markup_rune(cur), "Middle rune must be a valid markup rune")
+
+	markup :: proc(r: rune, unless: rune) -> bool {
+		return is_markup_rune(r) && r != unless
+	}
+	word :: proc(r: rune) -> bool {
+		return !is_markup_rune(r) && !is_white_space(r)
+	}
+	space_or_markup :: proc(r: rune, unless: rune) -> bool {
+		return is_white_space(r) || markup(r, unless)
+	}
+	word_or_markup :: proc(r: rune, unless: rune) -> bool {
+		return word(r) || markup(r, unless)
+	}
+
+	c1 := space_or_markup(prev, cur) && word_or_markup(next, cur)
+	c2 := word_or_markup(prev, cur) && space_or_markup(next, cur)
+
+	return c1 || c2
+}
+
+parse_style :: proc(source: string){
+	previous := '\n'
+	next : rune
+	for current, i in source {
+		defer previous = current
+		get_next_rune: {
+			next_rune_offset := i + utf8.rune_size(current)
+			if next_rune_offset >= len(source) {
+				next = '\n'
+			} else {
+				next, _ = utf8.decode_rune(source[next_rune_offset:])
+			}
+		}
+
+		if is_markup_rune(current) && previous != '\\' {
+			proper_position := is_markup_rune_suitable(previous, current, next)
+			if proper_position {
+				fmt.println("OK: ", current, i)
+			}
+		}
+	}
+}
+
 main :: proc(){
 	source :: #load("example.txt", string)
 	init_arena: {
@@ -247,15 +368,21 @@ main :: proc(){
 	}
 	defer free_all(context.allocator)
 
-	lines, err := strings.split(source, "\n")
-	if err != nil { panic("Failed allocation") }
-	blocks := parse_blocks(lines)
-	for b in blocks {
-		fmt.println(b)
-	}
-	fmt.println("------------------- MERGE ---------------")
-	blocks = merge_paragraph_lines(blocks)
-	for b in blocks {
-		fmt.println(b)
-	}
+	s :: "/*_italic_*/ and\\/_or_ https://hello.com/cu/article/100"
+	parse_style(s)
+
+	// lines, err := strings.split(source, "\n")
+	// if err != nil { panic("Failed allocation") }
+	// blocks := parse_blocks(lines)
+	// for b in blocks {
+	// 	fmt.println(b)
+	// }
+	// fmt.println("------------------- MERGE ---------------")
+	// blocks = merge_paragraph_lines(blocks)
+	// join_err := join_lines(blocks)
+	// assert(join_err == nil)
+	//
+	// for b in blocks {
+	// 	fmt.println(b)
+	// }
 }
